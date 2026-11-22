@@ -7,7 +7,7 @@ description: >-
   OpenRouter free, and Grok CLI.
 metadata:
   author: cemini23
-  version: "2026-11-22.1"
+  version: "2026-11-22.2"
 ---
 
 # /route — task router
@@ -56,7 +56,7 @@ Announce the lane and one reason. Then outsource. Do not type the implementation
 
 ## Timeout cascade (2026-11-22)
 
-Each lane has a three-stage budget. Verify is enforced by `Invoke-RouteVerifyGate -CommandTimeoutSec`.
+All three stages are enforced. `Get-RouteLaneTimeouts` supplies the budget for the classified lane.
 
 | Lane | Plan | Execute | Verify | Total |
 |------|------|---------|--------|-------|
@@ -64,7 +64,11 @@ Each lane has a three-stage budget. Verify is enforced by `Invoke-RouteVerifyGat
 | mid | 300s | 600s | 300s | 1200s |
 | hard | 900s | 1800s | 600s | 3300s |
 
-Plan and Execute are policy targets. They are not wired into executor subprocesses yet. Those stages keep the fixed hang-watch limits (`ROUTE_CLAUDE_DS_HANG_SECONDS`, `ROUTE_CLAUDE_DS_MAX_SECONDS`). Ticket: `briefs/agent-toolkit-upgrade-queue.md`, item RT-TIMEOUT-1.
+- Plan and Execute pass `-MaxSeconds` to `Invoke-PwshScriptNamedArgs`. A stage that exceeds its budget is killed by process tree and returns `TimedOut = $true`.
+- Verify passes `-CommandTimeoutSec` to `Invoke-RouteVerifyGate`.
+- `ROUTE_CLAUDE_DS_MAX_SECONDS` (default 2700s) is an outer ceiling. It clamps a stage budget; it does not replace it. Set it explicitly to cap a long hard run.
+- A timeout cascades. A Plan timeout falls to the Flash planner. An Execute timeout falls to the next executor in the chain. A stall kill (`KillReason = STALL`) is still a hang and hands off to the parent.
+- Each stage appends `{ts, lane, stage, executor, duration_s, budget_s, outcome}` to `$ROUTE_KIT/briefs/handoffs/_route_runs/stages-YYYY-MM-DD.jsonl`. These are measurement artifacts.
 
 The budgets are conservative defaults, not a derivation from the internal benchmark. That benchmark recorded a ~33% GPU-hour reduction with no accuracy loss; no measurement artifact is stored in this repository, so cite it as an internal finding.
 
